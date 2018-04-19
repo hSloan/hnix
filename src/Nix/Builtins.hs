@@ -600,25 +600,25 @@ functionArgs fun = force fun $ \case
     v -> throwError $ "builtins.functionArgs: expected function, got "
             ++ show v
 
-genericClosure :: MonadBuiltins e m => NThunk m -> m (NValue m)
-genericClosure set = force set $ fromValue >=> \case
-    NVSet attrs sourcePos -> do
-      startSet <- fromMaybe (throwError $ "attribute 'startSet'' required") $ M.lookup "startSet" attrs
-      workSet <- force startSet $ \case
-        NVList a:as -> return (toNix a,toNix as)
-        v -> throwError $ "builtins.genericClosure: expected a list, got " ++ show v
-      operator <- fromMaybe (throwError $ "attribute 'operator' required") $ M.lookup "operator" attrs
-      return $ foldl'_ operator workSet startSet
-    v -> throwError $ "builtins.functionArgs: expected function, got " ++ show v
-
-   --      force set $ \case
-   --  NVSet attrs sourcePos -> do
-   --    startSet <- fromMaybe (throwError $ "attribute 'startSet'' required") $ M.lookup "startSet" attrs
-   --    workSet <- force startSet $ \case
-   --      NVList sSet -> return sSet
-   --      v -> throwError $ "builtins.genericClosure: expected a list, got " ++ show v
-   --    operator <- fromMaybe (throwError $ "attribute 'operator' required") $ M.lookup "operator" attrs
-   --    NVList <$> map_ operator workSet
+genericClosure :: forall m e . MonadBuiltins e m => NThunk m -> m (NValue m)
+genericClosure set = force set $ \case
+    NVSet attrs sourcePos ->
+      case (M.lookup "startSet" attrs, M.lookup "operator" attrs) of
+        (Nothing, Nothing) -> throwError $ "attributes 'startSet' and 'operator' required"
+        (Nothing, Just _) -> throwError $ "attribute 'startSet' required"
+        (Just _, Nothing) -> throwError $ "attribute 'operator' required"
+        (Just startSet, Just operator) -> do
+            force startSet $ \case
+              NVList as -> forM as $ \a -> do
+                force a $ \case
+                  NVSet attr' pos -> do
+                    case M.lookup "key" attr' of
+                      Nothing -> throwError $ "attribute 'key' required"
+                      Just keyValue -> call1 operator keyValue
+                  _ -> throwError $ "builtins.genericClosure: expected a set, got " -- ++ show v
+              _ -> throwError $ "builtins.genericClosure: expected a list, got " -- ++ show v
+            return $ undefined -- foldl'_ operator workSet startSet
+    _ -> throwError $ "builtins.functionArgs: expected function, got " -- ++ show v
 
 toPath :: MonadBuiltins e m => NThunk m -> m (NValue m)
 toPath = flip force $ \case
