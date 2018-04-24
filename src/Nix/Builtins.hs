@@ -39,6 +39,8 @@ import           Data.Char (isDigit)
 import           Data.Coerce
 import           Data.Foldable (foldlM, foldrM)
 import qualified Data.HashMap.Lazy as M
+import qualified Data.Set as Set
+import           Data.Set (Set)
 import           Data.List
 import           Data.Maybe
 import           Data.Semigroup
@@ -600,25 +602,35 @@ functionArgs fun = force fun $ \case
     v -> throwError $ "builtins.functionArgs: expected function, got "
             ++ show v
 
+{- Description: takes a "startSet" (a list of initial graph nodes) and a "operator" function that must return nodes reachable from a node
+nodes are represented as attribute sets with a "key" attribute so "key" could be the package name in this caseany other 
+attributes are passed through -}
 genericClosure :: forall m e . MonadBuiltins e m => NThunk m -> m (NValue m)
-genericClosure set = force set $ \case
+genericClosure set = \case
     NVSet attrs sourcePos ->
       case (M.lookup "startSet" attrs, M.lookup "operator" attrs) of
         (Nothing, Nothing) -> throwError $ "attributes 'startSet' and 'operator' required"
         (Nothing, Just _) -> throwError $ "attribute 'startSet' required"
         (Just _, Nothing) -> throwError $ "attribute 'operator' required"
         (Just startSet, Just operator) -> do
+            let result = Set.empty  :: Set (Text, Text)
             force startSet $ \case
               NVList as -> forM as $ \a -> do
                 force a $ \case
                   NVSet attr' pos -> do
-                    case M.lookup "key" attr' of
-                      Nothing -> throwError $ "attribute 'key' required"
-                      Just keyValue -> call1 operator keyValue
-                  _ -> throwError $ "builtins.genericClosure: expected a set, got " -- ++ show v
-              _ -> throwError $ "builtins.genericClosure: expected a list, got " -- ++ show v
-            return $ undefined -- foldl'_ operator workSet startSet
-    _ -> throwError $ "builtins.functionArgs: expected function, got " -- ++ show v
+                    let result :: Set (Text, Text) = Set.empty
+                        gClosure a = do
+                          key :: Maybe Text <- M.lookup "key" a
+                          value :: Maybe Text <- M.lookup "value" a
+                          case (key, value) of
+                            ((Just k, Just v) :: (Maybe Text, Maybe Text)) -> Set.insert ((k, v) :: (Text, Text)) result
+                            _ -> throwError $ "" --TODO: Add some more useful error messages here
+                    gClosure attr'
+                  v -> throwError $ "builtins.genericClosure: expected a set, got " <> (show v)
+              v -> throwError $ "builtins.genericClosure: expected a list, got " <> (show v)
+            let thunkList = map (toNix . snd) $ Set.toList result
+            return $ toNix $ NVList $ map (call1 operator) $ thunkList
+    v -> throwError $ "builtins.functionArgs: expected function, got " <> (show v)
 
 toPath :: MonadBuiltins e m => NThunk m -> m (NValue m)
 toPath = flip force $ \case
