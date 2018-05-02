@@ -189,6 +189,7 @@ builtinsList = sequence [
     , add  Normal   "toPath"                     toPath
     , add  TopLevel "toString"                   toString
     , add  Normal   "toXML"                      toXML_
+    , add2  Normal  "toFile"                     toFile_
     , add  Normal   "tryEval"                    tryEval
     , add  Normal   "typeOf"                     typeOf
     , add  Normal   "unsafeDiscardStringContext" unsafeDiscardStringContext
@@ -812,6 +813,11 @@ fromJSON = fromValue >=> \encoded ->
 toXML_ :: MonadNix e m => m (NValue m) -> m (NValue m)
 toXML_ v = v >>= normalForm >>= \x ->
     pure $ nvStr (Text.pack (toXML x)) mempty
+
+toFile_ :: MonadNix e m => m (NValue m) -> m (NValue m) -> m (NValue m)
+toFile_ filename content = filename >>= \fn' -> content >>= \ct' -> case (fn', ct') of
+    (NVStr _ _, NVStr _ _ ) -> undefined
+    (filename, content) -> throwError @String ""
 
 typeOf :: MonadNix e m => m (NValue m) -> m (NValue m)
 typeOf v = v >>= toNix @Text . \case
